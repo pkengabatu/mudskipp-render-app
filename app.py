@@ -1,31 +1,51 @@
+import os
+import psycopg2
 from flask import Flask, request, redirect, render_template_string
 
 app = Flask(__name__)
 
-# temporary storage (no database yet)
-provinces = ["Honiara", "Malaita", "Western", "Choiseul"]
+def get_db():
+    return psycopg2.connect(os.environ["DATABASE_URL"], sslmode='require')
+
+# CREATE TABLE automatically (runs once on startup)
+def init_db():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS provinces (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
 
 # HOME
 @app.route("/")
 def home():
-    return render_template_string("""
-    <h1>Province CRUD System</h1>
-    <ul>
-        <li><a href="/provinces">View Provinces</a></li>
-        <li><a href="/add">Add Province</a></li>
-    </ul>
-    """)
+    return """
+    <h1>Province System (Database Version)</h1>
+    <a href="/provinces">View Provinces</a> |
+    <a href="/add">Add Province</a>
+    """
 
-# READ (LIST)
+# READ
 @app.route("/provinces")
 def list_provinces():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM provinces")
+    rows = cur.fetchall()
+    conn.close()
+
     html = "<h2>Provinces</h2><ul>"
-    for i, p in enumerate(provinces):
+    for r in rows:
         html += f"""
         <li>
-            {p}
-            <a href="/edit/{i}">Edit</a>
-            <a href="/delete/{i}">Delete</a>
+            {r[1]}
+            <a href="/delete/{r[0]}">Delete</a>
         </li>
         """
     html += "</ul><a href='/'>Back</a>"
@@ -36,7 +56,13 @@ def list_provinces():
 def add():
     if request.method == "POST":
         name = request.form["name"]
-        provinces.append(name)
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO provinces (name) VALUES (%s)", (name,))
+        conn.commit()
+        conn.close()
+
         return redirect("/provinces")
 
     return """
@@ -45,29 +71,17 @@ def add():
         <input name="name" placeholder="Province name">
         <button type="submit">Add</button>
     </form>
-    <br><a href='/'>Back</a>
-    """
-
-# UPDATE
-@app.route("/edit/<int:index>", methods=["GET", "POST"])
-def edit(index):
-    if request.method == "POST":
-        provinces[index] = request.form["name"]
-        return redirect("/provinces")
-
-    return f"""
-    <h2>Edit Province</h2>
-    <form method="post">
-        <input name="name" value="{provinces[index]}">
-        <button type="submit">Update</button>
-    </form>
-    <br><a href='/provinces'>Back</a>
     """
 
 # DELETE
-@app.route("/delete/<int:index>")
-def delete(index):
-    provinces.pop(index)
+@app.route("/delete/<int:id>")
+def delete(id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM provinces WHERE id=%s", (id,))
+    conn.commit()
+    conn.close()
+
     return redirect("/provinces")
 
 if __name__ == "__main__":
